@@ -9,6 +9,50 @@ FastAPI service around `yt-dlp`, intended to run only via Docker Compose.
 
 ## Run
 
+Create `.env` in the project root with the following values:
+
+```bash
+cat > .env <<'EOF'
+# Host path mapping (required for saving to host paths via /api/download)
+HOST_PATH_SOURCE_PREFIX=/Users
+HOST_PATH_MOUNT_PREFIX=/hostfs
+
+# App behavior
+LOG_LEVEL=INFO
+MAX_ACTIVE_JOBS=2
+JOB_ACQUIRE_TIMEOUT_S=2.0
+YTDLP_METADATA_TIMEOUT_S=60
+YTDLP_TITLE_TIMEOUT_S=30
+YTDLP_FILE_DOWNLOAD_TIMEOUT_S=7200
+YTDLP_CONCURRENT_FRAGMENTS=1
+FFMPEG_THREADS=1
+STREAM_CHUNK_SIZE_KB=256
+
+# Container resource limits
+CONTAINER_CPUS=2.0
+CONTAINER_MEM_LIMIT=2g
+CONTAINER_PIDS_LIMIT=256
+
+# Optional override (inside container path)
+# YT_DLP_BINARY=/usr/local/bin/yt-dlp
+EOF
+```
+
+Set host mapping for your OS:
+
+- macOS default: `HOST_PATH_SOURCE_PREFIX=/Users`
+- Linux default: `HOST_PATH_SOURCE_PREFIX=/home`
+- `HOST_PATH_MOUNT_PREFIX` can stay `/hostfs` (default in this project)
+
+How this mapping works:
+
+- Compose mounts `${HOST_PATH_SOURCE_PREFIX}:${HOST_PATH_MOUNT_PREFIX}`
+- If API request uses `download_path` under source prefix, app rewrites it for container writes
+- Example: `/Users/anikeshthakur/Downloads` becomes `/hostfs/anikeshthakur/Downloads` inside container
+- If `download_path` is outside `HOST_PATH_SOURCE_PREFIX`, mapping is skipped
+
+Then start:
+
 ```bash
 cd /Users/anikeshthakur/Documents/yt-downloader
 docker compose up -d --build
@@ -26,31 +70,17 @@ OpenAPI docs:
 
 ## Docker config
 
-`docker-compose.yml` already includes:
+`docker-compose.yml` loads values from `.env` (`env_file: .env`).
 
-- downloads mount: `${DOWNLOADS_HOST_DIR:-./downloads}:/downloads`
-- host path passthrough mount: `${HOST_PATH_SOURCE_PREFIX:-/Users}:/hostfs`
-- Pi-friendly limits and app tuning envs
+Recommended tunables:
 
-Useful env vars you can override:
-
-- `DOWNLOADS_HOST_DIR` default `./downloads`
-- `HOST_PATH_SOURCE_PREFIX` default `/Users` (set `/home` on many Linux systems)
-- `LOG_LEVEL` default `INFO`
 - `MAX_ACTIVE_JOBS` default `2`
 - `YTDLP_CONCURRENT_FRAGMENTS` default `1`
 - `FFMPEG_THREADS` default `1`
+- `YTDLP_FILE_DOWNLOAD_TIMEOUT_S` default `7200`
 - `CONTAINER_CPUS` default `2.0`
 - `CONTAINER_MEM_LIMIT` default `2g`
 - `CONTAINER_PIDS_LIMIT` default `256`
-
-Example:
-
-```bash
-export DOWNLOADS_HOST_DIR=/Users/anikeshthakur/Downloads
-export HOST_PATH_SOURCE_PREFIX=/Users
-docker compose up -d --build
-```
 
 ## API behavior
 
@@ -98,7 +128,7 @@ curl -X POST http://localhost:8000/api/download \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://www.youtube.com/watch?v=b-gjLgT4SUQ",
-    "download_path": "/Users/anikeshthakur/Downloads",
+    "download_path": "/Users/anikeshthakur/Downloads/yt",
     "format": { "quality": "720p", "ext": "mp4" }
   }'
 ```
